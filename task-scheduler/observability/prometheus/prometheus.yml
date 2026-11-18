@@ -1,0 +1,52 @@
+global:
+  scrape_interval: 10s
+  scrape_timeout: 7s
+  evaluation_interval: 10s
+rule_files:
+  - /etc/prometheus/rules.yml
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+  - job_name: api
+    metrics_path: /metrics
+    dns_sd_configs:
+      - names: [api]
+        type: A
+        port: 8000
+        refresh_interval: 10s
+  - job_name: worker
+    metrics_path: /metrics
+    dns_sd_configs:
+      - names: [worker]
+        type: A
+        port: 8003
+        refresh_interval: 10s
+  - job_name: scheduler
+    metrics_path: /metrics
+    dns_sd_configs:
+      - names: [scheduler]
+        type: A
+        port: 8001
+        refresh_interval: 10s
+  - job_name: dlq
+    metrics_path: /metrics
+    dns_sd_configs:
+      - names: [dlq]
+        type: A
+        port: 8005
+        refresh_interval: 10s
+  - job_name: agent
+    metrics_path: /metrics
+    dns_sd_configs:
+      - names: [agent]
+        type: A
+        port: 8006
+        refresh_interval: 10s
+  - job_name: worker-java
+    metrics_path: /actuator/prometheus
+    dns_sd_configs:
+      - names: [worker-java]
+        type: A
+        port: 8007
+        refresh_interval: 10s

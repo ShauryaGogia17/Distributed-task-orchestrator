@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "JsonValue": {}
+  },
+  "additionalProperties": false,
+  "description": "An immutable attempt outcome; the current task row may already be in a later generation.",
+  "properties": {
+    "version": {
+      "const": 1,
+      "default": 1,
+      "title": "Version",
+      "type": "integer"
+    },
+    "generation": {
+      "default": 0,
+      "maximum": 2147483647,
+      "minimum": 0,
+      "title": "Generation",
+      "type": "integer"
+    },
+    "task_id": {
+      "format": "uuid",
+      "title": "Task Id",
+      "type": "string"
+    },
+    "type": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[a-zA-Z][a-zA-Z0-9_.-]*$",
+      "title": "Type",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "SUCCEEDED",
+        "RETRYING",
+        "FAILED"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "attempt_no": {
+      "maximum": 2147483647,
+      "minimum": 1,
+      "title": "Attempt No",
+      "type": "integer"
+    },
+    "worker_id": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Worker Id",
+      "type": "string"
+    },
+    "result": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/JsonValue"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "error": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Error"
+    },
+    "duration_seconds": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Duration Seconds"
+    },
+    "finished_at": {
+      "format": "date-time",
+      "title": "Finished At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "task_id",
+    "type",
+    "status",
+    "attempt_no",
+    "worker_id",
+    "result",
+    "error",
+    "finished_at"
+  ],
+  "title": "TaskResultMessage",
+  "type": "object"
+}

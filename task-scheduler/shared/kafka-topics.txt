@@ -1,0 +1,6 @@
+tasks.pending 6
+tasks.retry.5s 3
+tasks.retry.30s 3
+tasks.retry.5m 3
+tasks.dlq 3
+tasks.results 3

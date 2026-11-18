@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "JsonValue": {}
+  },
+  "additionalProperties": false,
+  "description": "Versioned Kafka dispatch envelope; attempt numbers are one-based.",
+  "properties": {
+    "version": {
+      "const": 1,
+      "default": 1,
+      "title": "Version",
+      "type": "integer"
+    },
+    "ai_modified": {
+      "default": false,
+      "title": "Ai Modified",
+      "type": "boolean"
+    },
+    "generation": {
+      "default": 0,
+      "maximum": 2147483647,
+      "minimum": 0,
+      "title": "Generation",
+      "type": "integer"
+    },
+    "task_id": {
+      "format": "uuid",
+      "title": "Task Id",
+      "type": "string"
+    },
+    "type": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[a-zA-Z][a-zA-Z0-9_.-]*$",
+      "title": "Type",
+      "type": "string"
+    },
+    "payload": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Payload",
+      "type": "object"
+    },
+    "priority": {
+      "default": 0,
+      "maximum": 9,
+      "minimum": 0,
+      "title": "Priority",
+      "type": "integer"
+    },
+    "attempt_no": {
+      "default": 1,
+      "maximum": 2147483647,
+      "minimum": 1,
+      "title": "Attempt No",
+      "type": "integer"
+    },
+    "max_retries": {
+      "default": 3,
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Max Retries",
+      "type": "integer"
+    },
+    "scheduled_at": {
+      "format": "date-time",
+      "title": "Scheduled At",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "task_id",
+    "type",
+    "scheduled_at"
+  ],
+  "title": "TaskMessage",
+  "type": "object"
+}

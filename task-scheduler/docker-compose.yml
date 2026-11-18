@@ -1,0 +1,469 @@
+name: ${COMPOSE_PROJECT_NAME:-task-scheduler}
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  migrate:
+    image: ${COMPOSE_PROJECT_NAME:-task-scheduler}-api:local
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    restart: "no"
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    environment: &app-environment
+      METRICS_SCRAPE_TIMEOUT_SECONDS: ${METRICS_SCRAPE_TIMEOUT_SECONDS:-5}
+      METRICS_STUCK_RUNNING_SECONDS: ${METRICS_STUCK_RUNNING_SECONDS:-300}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-task_scheduler}
+      POSTGRES_USER: ${POSTGRES_USER:-task_scheduler}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a nonempty POSTGRES_PASSWORD in .env}
+      POSTGRES_CONNECT_TIMEOUT_SECONDS: ${POSTGRES_CONNECT_TIMEOUT_SECONDS:-5}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:19092
+      KAFKA_CLIENT_ID: ${KAFKA_CLIENT_ID:-task-scheduler}-api
+      KAFKA_REQUEST_TIMEOUT_MS: ${KAFKA_REQUEST_TIMEOUT_MS:-10000}
+      KAFKA_MAX_MESSAGE_BYTES: ${KAFKA_MAX_MESSAGE_BYTES:-33554432}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_DB: ${REDIS_DB:-0}
+      REDIS_SOCKET_TIMEOUT_SECONDS: ${REDIS_SOCKET_TIMEOUT_SECONDS:-5}
+      API_HOST: 0.0.0.0
+      API_PORT: "8000"
+      API_MAX_TASK_MESSAGE_BYTES: ${API_MAX_TASK_MESSAGE_BYTES:-900000}
+      API_OUTBOX_ENABLED: ${API_OUTBOX_ENABLED:-true}
+      API_OUTBOX_BATCH_SIZE: ${API_OUTBOX_BATCH_SIZE:-100}
+      API_OUTBOX_POLL_SECONDS: ${API_OUTBOX_POLL_SECONDS:-0.5}
+      API_OUTBOX_RETRY_SECONDS: ${API_OUTBOX_RETRY_SECONDS:-1}
+      API_OUTBOX_PUBLISH_TIMEOUT_SECONDS: ${API_OUTBOX_PUBLISH_TIMEOUT_SECONDS:-10}
+      API_OUTBOX_SHUTDOWN_TIMEOUT_SECONDS: ${API_OUTBOX_SHUTDOWN_TIMEOUT_SECONDS:-30}
+      API_HEALTH_TIMEOUT_SECONDS: ${API_HEALTH_TIMEOUT_SECONDS:-3}
+      SCHEDULER_QUEUE_KEY: ${SCHEDULER_QUEUE_KEY:-scheduled_tasks}
+      SCHEDULER_MISSED_RUN_POLICY: ${SCHEDULER_MISSED_RUN_POLICY:-fire_once}
+      DLQ_BULK_LIMIT: ${DLQ_BULK_LIMIT:-100}
+      CIRCUIT_KEY_PREFIX: ${CIRCUIT_KEY_PREFIX:-task-scheduler:circuit:}
+      CIRCUIT_COOLDOWN_SECONDS: ${CIRCUIT_COOLDOWN_SECONDS:-30}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [scheduler]
+    logging: *logging
+
+  api:
+    image: ${COMPOSE_PROJECT_NAME:-task-scheduler}-api:local
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    restart: unless-stopped
+    stop_grace_period: 45s
+    environment: *app-environment
+    ports:
+      - "127.0.0.1:${API_PORT:-8002}:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/health', timeout=12).close()"]
+      interval: 10s
+      timeout: 15s
+      start_period: 20s
+      retries: 12
+    networks: [scheduler]
+    logging: *logging
+
+  worker:
+    image: ${COMPOSE_PROJECT_NAME:-task-scheduler}-worker:local
+    build:
+      context: .
+      dockerfile: services/worker/Dockerfile
+    restart: unless-stopped
+    stop_grace_period: 120s
+    environment:
+      <<: *app-environment
+      KAFKA_CLIENT_ID: ${KAFKA_CLIENT_ID:-task-scheduler}-worker
+      WORKER_ID: ${WORKER_ID:-}
+      WORKER_GROUP_ID: ${WORKER_GROUP_ID:-task-workers}
+      WORKER_METRICS_ENABLED: "true"
+      WORKER_METRICS_HOST: 0.0.0.0
+      WORKER_METRICS_PORT: "8003"
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
+      WORKER_TASK_TIMEOUT_SECONDS: ${WORKER_TASK_TIMEOUT_SECONDS:-30}
+      WORKER_VISIBILITY_TIMEOUT_SECONDS: ${WORKER_VISIBILITY_TIMEOUT_SECONDS:-60}
+      WORKER_HEARTBEAT_INTERVAL_SECONDS: ${WORKER_HEARTBEAT_INTERVAL_SECONDS:-5}
+      WORKER_HEARTBEAT_TTL_SECONDS: ${WORKER_HEARTBEAT_TTL_SECONDS:-20}
+      WORKER_COMPLETION_TTL_SECONDS: ${WORKER_COMPLETION_TTL_SECONDS:-86400}
+      WORKER_RESULT_PUBLISH_TIMEOUT_SECONDS: ${WORKER_RESULT_PUBLISH_TIMEOUT_SECONDS:-30}
+      WORKER_RETRY_POLL_SECONDS: ${WORKER_RETRY_POLL_SECONDS:-1}
+      WORKER_RETRY_BASE_SECONDS: ${WORKER_RETRY_BASE_SECONDS:-5}
+      WORKER_RETRY_CAP_SECONDS: ${WORKER_RETRY_CAP_SECONDS:-300}
+      WORKER_RETRY_ENGINE_POLL_SECONDS: ${WORKER_RETRY_ENGINE_POLL_SECONDS:-0.25}
+      WORKER_RETRY_BATCH_SIZE: ${WORKER_RETRY_BATCH_SIZE:-100}
+      WORKER_MAX_CRASH_CLAIMS: ${WORKER_MAX_CRASH_CLAIMS:-3}
+      WORKER_SHUTDOWN_TIMEOUT_SECONDS: ${WORKER_SHUTDOWN_TIMEOUT_SECONDS:-90}
+      WORKER_REBALANCE_TIMEOUT_SECONDS: ${WORKER_REBALANCE_TIMEOUT_SECONDS:-90}
+      WORKER_MAX_POLL_INTERVAL_MS: ${WORKER_MAX_POLL_INTERVAL_MS:-300000}
+      WORKER_HTTP_TIMEOUT_SECONDS: ${WORKER_HTTP_TIMEOUT_SECONDS:-5}
+      WORKER_HTTP_MAX_RESPONSE_BYTES: ${WORKER_HTTP_MAX_RESPONSE_BYTES:-65536}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "services.worker.health"]
+      interval: 5s
+      timeout: 5s
+      start_period: 20s
+      retries: 12
+    networks: [scheduler]
+    logging: *logging
+
+  scheduler:
+    image: ${COMPOSE_PROJECT_NAME:-task-scheduler}-scheduler:local
+    build:
+      context: .
+      dockerfile: services/scheduler/Dockerfile
+    deploy:
+      replicas: 2
+    restart: unless-stopped
+    stop_grace_period: 45s
+    environment:
+      <<: *app-environment
+      KAFKA_CLIENT_ID: ${KAFKA_CLIENT_ID:-task-scheduler}-scheduler
+      SCHEDULER_HOST: 0.0.0.0
+      SCHEDULER_PORT: "8001"
+      SCHEDULER_ID: ${SCHEDULER_ID:-}
+      SCHEDULER_LEADER_KEY: ${SCHEDULER_LEADER_KEY:-scheduler:leader}
+      SCHEDULER_POLL_SECONDS: ${SCHEDULER_POLL_SECONDS:-1}
+      SCHEDULER_ELECTION_POLL_SECONDS: ${SCHEDULER_ELECTION_POLL_SECONDS:-0.25}
+      SCHEDULER_LEADER_TTL_SECONDS: ${SCHEDULER_LEADER_TTL_SECONDS:-5}
+      SCHEDULER_RENEWAL_SECONDS: ${SCHEDULER_RENEWAL_SECONDS:-1}
+      SCHEDULER_BATCH_SIZE: ${SCHEDULER_BATCH_SIZE:-100}
+      SCHEDULER_MISFIRE_GRACE_SECONDS: ${SCHEDULER_MISFIRE_GRACE_SECONDS:-2}
+    ports:
+      - "127.0.0.1::8001"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8001/health', timeout=10).close()"]
+      interval: 5s
+      timeout: 12s
+      start_period: 20s
+      retries: 12
+    networks: [scheduler]
+    logging: *logging
+
+  dlq:
+    image: ${COMPOSE_PROJECT_NAME:-task-scheduler}-dlq:local
+    build:
+      context: .
+      dockerfile: services/dlq/Dockerfile
+    restart: unless-stopped
+    stop_grace_period: 45s
+    environment:
+      <<: *app-environment
+      KAFKA_CLIENT_ID: ${KAFKA_CLIENT_ID:-task-scheduler}-dlq
+      DLQ_HOST: 0.0.0.0
+      DLQ_PORT: "8005"
+      DLQ_GROUP_ID: ${DLQ_GROUP_ID:-task-dlq}
+      DLQ_BATCH_SIZE: ${DLQ_BATCH_SIZE:-10}
+      DLQ_RETRY_SECONDS: ${DLQ_RETRY_SECONDS:-1}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8005/health', timeout=10).close()"]
+      interval: 5s
+      timeout: 12s
+      start_period: 20s
+      retries: 12
+    networks: [scheduler]
+    logging: *logging
+
+  agent:
+    image: ${COMPOSE_PROJECT_NAME:-task-scheduler}-agent:local
+    build:
+      context: .
+      dockerfile: services/agent/Dockerfile
+    restart: unless-stopped
+    stop_grace_period: 90s
+    environment:
+      <<: *app-environment
+      AGENT_HOST: 0.0.0.0
+      AGENT_PORT: "8006"
+      AGENT_ENABLED: ${AGENT_ENABLED:-true}
+      AGENT_KILL_SWITCH: ${AGENT_KILL_SWITCH:-false}
+      AGENT_POLL_SECONDS: ${AGENT_POLL_SECONDS:-0.5}
+      AGENT_BATCH_SIZE: ${AGENT_BATCH_SIZE:-50}
+      AGENT_CLUSTER_WINDOW_SECONDS: ${AGENT_CLUSTER_WINDOW_SECONDS:-60}
+      AGENT_CLUSTER_DEBOUNCE_SECONDS: ${AGENT_CLUSTER_DEBOUNCE_SECONDS:-2}
+      AGENT_CIRCUIT_FAILURE_THRESHOLD: ${AGENT_CIRCUIT_FAILURE_THRESHOLD:-3}
+      AGENT_CONFIDENCE_THRESHOLD: ${AGENT_CONFIDENCE_THRESHOLD:-0.85}
+      AGENT_MAX_AUTO_REQUEUES: ${AGENT_MAX_AUTO_REQUEUES:-1}
+      AGENT_MIN_BACKOFF_SECONDS: ${AGENT_MIN_BACKOFF_SECONDS:-30}
+      AGENT_MAX_BACKOFF_SECONDS: ${AGENT_MAX_BACKOFF_SECONDS:-3600}
+      AGENT_MAX_STEPS: ${AGENT_MAX_STEPS:-4}
+      AGENT_DIAGNOSIS_TIMEOUT_SECONDS: ${AGENT_DIAGNOSIS_TIMEOUT_SECONDS:-60}
+      AGENT_LEASE_SECONDS: ${AGENT_LEASE_SECONDS:-180}
+      AGENT_LAST_ERRORS: ${AGENT_LAST_ERRORS:-3}
+      AGENT_CONTEXT_MAX_BYTES: ${AGENT_CONTEXT_MAX_BYTES:-64000}
+      AGENT_HOURLY_TOKEN_BUDGET: ${AGENT_HOURLY_TOKEN_BUDGET:-1000000}
+      AGENT_HOURLY_COST_BUDGET_USD: ${AGENT_HOURLY_COST_BUDGET_USD:-5}
+      AGENT_BUDGET_KEY_PREFIX: ${AGENT_BUDGET_KEY_PREFIX:-task-scheduler:agent-budget:}
+      AGENT_PROMPT_VERSION: ${AGENT_PROMPT_VERSION:-v1}
+      LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+      LLM_MODEL: ${LLM_MODEL:-claude-sonnet-4-5}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-30}
+      LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-2048}
+      LLM_MAX_ATTEMPTS: ${LLM_MAX_ATTEMPTS:-3}
+      LLM_RETRY_CAP_SECONDS: ${LLM_RETRY_CAP_SECONDS:-5}
+      LLM_INPUT_USD_PER_MILLION: ${LLM_INPUT_USD_PER_MILLION:-3}
+      LLM_OUTPUT_USD_PER_MILLION: ${LLM_OUTPUT_USD_PER_MILLION:-15}
+    ports:
+      - "127.0.0.1:${AGENT_PORT:-8006}:8006"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      dlq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8006/health', timeout=10).close()"]
+      interval: 5s
+      timeout: 12s
+      start_period: 20s
+      retries: 12
+    networks: [scheduler]
+    logging: *logging
+
+  worker-java:
+    image: ${COMPOSE_PROJECT_NAME:-task-scheduler}-worker-java:local
+    profiles: [java]
+    build:
+      context: .
+      dockerfile: services/worker-java/Dockerfile
+    restart: unless-stopped
+    stop_grace_period: 120s
+    environment:
+      <<: *app-environment
+      JAVA_WORKER_HOST: 0.0.0.0
+      JAVA_WORKER_PORT: "8007"
+      JAVA_WORKER_ID: ${JAVA_WORKER_ID:-}
+      JAVA_WORKER_GROUP_ID: ${JAVA_WORKER_GROUP_ID:-task-workers-java}
+      PYTHON_WORKER_GROUP_ID: ${WORKER_GROUP_ID:-task-workers}
+      JAVA_WORKER_CONCURRENCY: ${JAVA_WORKER_CONCURRENCY:-2}
+      JAVA_WORKER_TASK_TIMEOUT_SECONDS: ${JAVA_WORKER_TASK_TIMEOUT_SECONDS:-30}
+      JAVA_WORKER_VISIBILITY_TIMEOUT_SECONDS: ${JAVA_WORKER_VISIBILITY_TIMEOUT_SECONDS:-60}
+      JAVA_WORKER_PUBLISH_TIMEOUT_SECONDS: ${JAVA_WORKER_PUBLISH_TIMEOUT_SECONDS:-20}
+      JAVA_WORKER_MAX_POLL_INTERVAL_MS: ${JAVA_WORKER_MAX_POLL_INTERVAL_MS:-300000}
+      WORKER_RETRY_BASE_SECONDS: ${WORKER_RETRY_BASE_SECONDS:-5}
+      WORKER_RETRY_CAP_SECONDS: ${WORKER_RETRY_CAP_SECONDS:-300}
+      WORKER_MAX_CRASH_CLAIMS: ${WORKER_MAX_CRASH_CLAIMS:-3}
+      WORKER_HEARTBEAT_TTL_SECONDS: ${WORKER_HEARTBEAT_TTL_SECONDS:-20}
+      JAVA_TOOL_OPTIONS: ${JAVA_WORKER_JVM_OPTIONS:--Xms64m -Xmx256m -XX:MaxMetaspaceSize=160m -Djava.awt.headless=true}
+    ports:
+      - "127.0.0.1:${JAVA_WORKER_PORT:-8007}:8007"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8007/actuator/health"]
+      interval: 10s
+      timeout: 8s
+      start_period: 40s
+      retries: 18
+    networks: [scheduler]
+    logging: *logging
+
+  prometheus:
+    image: ${PROMETHEUS_IMAGE:-prom/prometheus:v3.16.0}
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+    ports:
+      - "127.0.0.1:${OBSERVABILITY_PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/rules.yml:/etc/prometheus/rules.yml:ro
+      - prometheus-data:/prometheus
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9090/-/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks: [scheduler]
+    logging: *logging
+
+  grafana:
+    image: ${GRAFANA_IMAGE:-grafana/grafana:13.3.0}
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Run python scripts/init_observability.py first}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    ports:
+      - "127.0.0.1:${OBSERVABILITY_GRAFANA_PORT:-3001}:3000"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks: [scheduler]
+    logging: *logging
+
+  kafka:
+    image: ${KAFKA_IMAGE:-apache/kafka:4.1.2}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${KAFKA_PORT:-9092}:9092"
+    environment:
+      CLUSTER_ID: ${KAFKA_CLUSTER_ID:?Set KAFKA_CLUSTER_ID in .env}
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: INTERNAL://:19092,EXTERNAL://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:19092,EXTERNAL://${KAFKA_ADVERTISED_HOST:-localhost}:${KAFKA_PORT:-9092}
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR: "1"
+      KAFKA_DEFAULT_REPLICATION_FACTOR: "1"
+      KAFKA_MIN_INSYNC_REPLICAS: "1"
+      KAFKA_NUM_PARTITIONS: "3"
+      KAFKA_MESSAGE_MAX_BYTES: ${KAFKA_MAX_MESSAGE_BYTES:-33554432}
+      KAFKA_REPLICA_FETCH_MAX_BYTES: ${KAFKA_MAX_MESSAGE_BYTES:-33554432}
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", "kafka:19092", "--list"]
+      interval: 10s
+      timeout: 10s
+      start_period: 40s
+      retries: 12
+    networks: [scheduler]
+    logging: *logging
+
+  kafka-init:
+    image: ${KAFKA_IMAGE:-apache/kafka:4.1.2}
+    restart: "no"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "/opt/bootstrap/init-kafka.sh"]
+    volumes:
+      - ./scripts/init-kafka.sh:/opt/bootstrap/init-kafka.sh:ro
+      - ./shared/kafka-topics.txt:/opt/bootstrap/kafka-topics.txt:ro
+    networks: [scheduler]
+    logging: *logging
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:7.4.2-alpine}
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks: [scheduler]
+    logging: *logging
+
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16.8-alpine}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-task_scheduler}
+      POSTGRES_USER: ${POSTGRES_USER:-task_scheduler}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a nonempty POSTGRES_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 3s
+      start_period: 10s
+      retries: 12
+    networks: [scheduler]
+    logging: *logging
+
+  kafka-ui:
+    image: ${KAFKA_UI_IMAGE:-ghcr.io/kafbat/kafka-ui:v1.2.0}
+    profiles: [debug]
+    restart: unless-stopped
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_CLUSTERS_0_NAME: task-scheduler-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:19092
+      DYNAMIC_CONFIG_ENABLED: "false"
+    ports:
+      - "127.0.0.1:${KAFKA_UI_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 12
+    networks: [scheduler]
+    logging: *logging
+
+volumes:
+  kafka-data:
+  redis-data:
+  postgres-data:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  scheduler:
+    driver: bridge

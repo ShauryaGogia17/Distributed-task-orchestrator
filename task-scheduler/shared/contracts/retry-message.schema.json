@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Small durable retry-inbox event; task data remains authoritative in Postgres.",
+  "properties": {
+    "version": {
+      "const": 1,
+      "default": 1,
+      "title": "Version",
+      "type": "integer"
+    },
+    "generation": {
+      "default": 0,
+      "maximum": 2147483647,
+      "minimum": 0,
+      "title": "Generation",
+      "type": "integer"
+    },
+    "event_id": {
+      "format": "uuid",
+      "title": "Event Id",
+      "type": "string"
+    },
+    "task_id": {
+      "format": "uuid",
+      "title": "Task Id",
+      "type": "string"
+    },
+    "failed_attempt": {
+      "maximum": 2147483647,
+      "minimum": 1,
+      "title": "Failed Attempt",
+      "type": "integer"
+    },
+    "due_at": {
+      "format": "date-time",
+      "title": "Due At",
+      "type": "string"
+    },
+    "delay_seconds": {
+      "minimum": 0,
+      "title": "Delay Seconds",
+      "type": "number"
+    }
+  },
+  "required": [
+    "event_id",
+    "task_id",
+    "failed_attempt",
+    "due_at",
+    "delay_seconds"
+  ],
+  "title": "RetryMessage",
+  "type": "object"
+}

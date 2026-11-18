@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One failed execution, embedded in a dead letter's JSON error history.",
+  "properties": {
+    "attempt_no": {
+      "maximum": 2147483647,
+      "minimum": 1,
+      "title": "Attempt No",
+      "type": "integer"
+    },
+    "generation": {
+      "default": 0,
+      "maximum": 2147483647,
+      "minimum": 0,
+      "title": "Generation",
+      "type": "integer"
+    },
+    "worker_id": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Worker Id",
+      "type": "string"
+    },
+    "error": {
+      "minLength": 1,
+      "title": "Error",
+      "type": "string"
+    },
+    "stack_trace": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Stack Trace"
+    },
+    "recorded_at": {
+      "format": "date-time",
+      "title": "Recorded At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "attempt_no",
+    "worker_id",
+    "error"
+  ],
+  "title": "ErrorRecord",
+  "type": "object"
+}

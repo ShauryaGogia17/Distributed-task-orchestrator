@@ -1,0 +1,138 @@
+{
+  "task_id": "77342418-78a5-4bdf-8591-ab0467e5a9f4",
+  "event_ids": [
+    {
+      "attempt": 1,
+      "generation": 0,
+      "kind": "result",
+      "id": "e54cbeb8-7401-50cb-a111-3ce38adcc4fe"
+    },
+    {
+      "attempt": 1,
+      "generation": 0,
+      "kind": "retry",
+      "id": "e22c7bec-3a99-5f4a-8459-d1363adcd32e"
+    },
+    {
+      "attempt": 1,
+      "generation": 0,
+      "kind": "dlq",
+      "id": "1b1ddfaf-bb5b-5652-ac14-903018718e76"
+    },
+    {
+      "attempt": 1,
+      "generation": 0,
+      "kind": "redispatch",
+      "id": "f424e7b1-d208-5875-bee0-cad025785a24"
+    },
+    {
+      "attempt": 1,
+      "generation": 2,
+      "kind": "result",
+      "id": "36d46851-056b-51a1-8d50-eb2e41a585d3"
+    },
+    {
+      "attempt": 1,
+      "generation": 2,
+      "kind": "retry",
+      "id": "fca2360e-3ca8-597f-b920-b526e2cb80bc"
+    },
+    {
+      "attempt": 1,
+      "generation": 2,
+      "kind": "dlq",
+      "id": "47e6346b-8e7f-5288-9d04-b2a88a384744"
+    },
+    {
+      "attempt": 1,
+      "generation": 2,
+      "kind": "redispatch",
+      "id": "3028d5df-ce8b-5c0f-a3cd-4c09b35ed450"
+    },
+    {
+      "attempt": 3,
+      "generation": 0,
+      "kind": "result",
+      "id": "a72a0bb9-ab9a-54c7-9ff3-aa749ed7099b"
+    },
+    {
+      "attempt": 3,
+      "generation": 0,
+      "kind": "retry",
+      "id": "1f680877-8095-50e6-800c-263e7d22c649"
+    },
+    {
+      "attempt": 3,
+      "generation": 0,
+      "kind": "dlq",
+      "id": "2b15e63e-decc-5565-91ef-46f316740d21"
+    },
+    {
+      "attempt": 3,
+      "generation": 0,
+      "kind": "redispatch",
+      "id": "89d1502c-af7e-5e79-bc87-f716b9af137c"
+    },
+    {
+      "attempt": 3,
+      "generation": 2,
+      "kind": "result",
+      "id": "c257b1d5-dde3-5cc9-83c2-073a2dc4e43f"
+    },
+    {
+      "attempt": 3,
+      "generation": 2,
+      "kind": "retry",
+      "id": "902b024f-ceed-58ad-b71d-3dd051384f7f"
+    },
+    {
+      "attempt": 3,
+      "generation": 2,
+      "kind": "dlq",
+      "id": "085a38a1-ce39-5c37-8325-2b7af6d4edf1"
+    },
+    {
+      "attempt": 3,
+      "generation": 2,
+      "kind": "redispatch",
+      "id": "109a1743-8733-53ec-8a75-5e1f057726d6"
+    }
+  ],
+  "partitions": [
+    {
+      "priority": 0,
+      "key": "low:77342418-78a5-4bdf-8591-ab0467e5a9f4",
+      "partition": 5
+    },
+    {
+      "priority": 5,
+      "key": "normal:77342418-78a5-4bdf-8591-ab0467e5a9f4",
+      "partition": 3
+    },
+    {
+      "priority": 8,
+      "key": "high:77342418-78a5-4bdf-8591-ab0467e5a9f4",
+      "partition": 1
+    }
+  ],
+  "fingerprints": [
+    {
+      "error": "request_id=req-alpha task 023ca111-f987-4acd-ab42-332abcaf1651 failed at 2026-11-10T10:01:02.123Z after 17 seconds",
+      "trace": "File \"/app/worker/handler.py\", line 123, in run\nConnectionError: peer 192.168.1.20:12345",
+      "normalized": "request_id=<id> task <id> failed at <timestamp> after <number> seconds",
+      "signature": "97701c3cdba66465ed9f75c61f67da23b22a775d18a387731251c2a1e9b53084"
+    },
+    {
+      "error": "ValidationError: résumé 123",
+      "trace": "java.worker.Handle.run(Handle.java:456)",
+      "normalized": "validationerror: résumé <number>",
+      "signature": "fc99c6139e15c35c6fda01fae73096956cba579b4e68ab82f65b08fd066a81bd"
+    },
+    {
+      "error": "worker_id=worker-alpha 0x1234abcd",
+      "trace": "",
+      "normalized": "worker_id=<id> <id>",
+      "signature": "ba66c3a62e8bb8e31651a742aaaf8fa0d83f13013008c846f9c4daaeecbcd068"
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+groups:
+  - name: task-scheduler-recording
+    rules:
+      - record: scheduler:tasks_submitted_total
+        expr: max (tasks_submitted_total)
+      - record: scheduler:tasks_processed_total
+        expr: max by (status,type) (tasks_processed_total)
+      - record: scheduler:task_latency_seconds_bucket
+        expr: max by (type,le) (task_latency_seconds_bucket)
+      - record: scheduler:task_latency_seconds_count
+        expr: max by (type) (task_latency_seconds_count)
+      - record: scheduler:task_latency_seconds_sum
+        expr: max by (type) (task_latency_seconds_sum)
+      - record: scheduler:retries_total
+        expr: max by (type) (retries_total)
+      - record: scheduler:dlq_size
+        expr: max by (type) (dlq_size)
+      - record: scheduler:agent_diagnoses_total
+        expr: max by (category,action) (agent_diagnoses_total)
+      - record: scheduler:agent_tokens_total
+        expr: max by (direction) (agent_tokens_total)
+      - record: scheduler:circuit_breaker_open
+        expr: max by (type) (circuit_breaker_open)
+      - record: scheduler:outbox_lag
+        expr: max (outbox_lag)
+      - record: scheduler:outbox_pending
+        expr: max (outbox_pending)
+      - record: scheduler:stuck_running_tasks
+        expr: max (stuck_running_tasks)
+  - name: task-scheduler-alerts
+    rules:
+      - alert: DLQGrowing
+        expr: delta((sum(scheduler:dlq_size))[10m:10s]) > 5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Open DLQ grew by more than five incidents in ten minutes
+          description: Inspect the DLQ and agent actions in the Task Scheduler dashboard.
+      - alert: TasksStuckRunning
+        expr: scheduler:stuck_running_tasks > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Tasks exceeded the configured RUNNING age threshold
+          description: Inspect worker heartbeats, task leases, and correlated logs before retrying.
+      - alert: SchedulerLeaderAbsent
+        expr: (max(scheduler_is_leader{job="scheduler"}) < 1) or sum(absent(scheduler_is_leader{job="scheduler"}))
+        for: 15s
+        labels:
+          severity: critical
+        annotations:
+          summary: No scheduler leader is observable
+          description: Inspect both scheduler replicas, Redis, and Prometheus scrape health.

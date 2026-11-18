@@ -1,0 +1,161 @@
+{
+  "rule_files": [
+    "rules.yml"
+  ],
+  "evaluation_interval": "10s",
+  "tests": [
+    {
+      "name": "standby does not imply leader loss; shared metrics do not multiply",
+      "interval": "10s",
+      "input_series": [
+        {
+          "series": "scheduler_is_leader{job=\"scheduler\",instance=\"one\"}",
+          "values": "1+0x70"
+        },
+        {
+          "series": "scheduler_is_leader{job=\"scheduler\",instance=\"two\"}",
+          "values": "0+0x70"
+        },
+        {
+          "series": "dlq_size{job=\"api\",type=\"email\"}",
+          "values": "20+0x70"
+        },
+        {
+          "series": "dlq_size{job=\"agent\",type=\"email\"}",
+          "values": "20+0x70"
+        }
+      ],
+      "alert_rule_test": [
+        {
+          "eval_time": "5m",
+          "alertname": "SchedulerLeaderAbsent",
+          "exp_alerts": []
+        },
+        {
+          "eval_time": "5m",
+          "alertname": "DLQGrowing",
+          "exp_alerts": []
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "sum(scheduler:dlq_size)",
+          "eval_time": "5m",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 20
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "both leaders zero",
+      "interval": "10s",
+      "input_series": [
+        {
+          "series": "scheduler_is_leader{job=\"scheduler\"}",
+          "values": "0+0x10"
+        }
+      ],
+      "alert_rule_test": [
+        {
+          "eval_time": "30s",
+          "alertname": "SchedulerLeaderAbsent",
+          "exp_alerts": [
+            {
+              "exp_labels": {
+                "severity": "critical"
+              },
+              "exp_annotations": {
+                "summary": "No scheduler leader is observable",
+                "description": "Inspect both scheduler replicas, Redis, and Prometheus scrape health."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "all scheduler targets missing",
+      "interval": "10s",
+      "input_series": [],
+      "alert_rule_test": [
+        {
+          "eval_time": "30s",
+          "alertname": "SchedulerLeaderAbsent",
+          "exp_alerts": [
+            {
+              "exp_labels": {
+                "severity": "critical"
+              },
+              "exp_annotations": {
+                "summary": "No scheduler leader is observable",
+                "description": "Inspect both scheduler replicas, Redis, and Prometheus scrape health."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "stuck running task persists",
+      "interval": "10s",
+      "input_series": [
+        {
+          "series": "stuck_running_tasks{job=\"worker\"}",
+          "values": "1+0x30"
+        }
+      ],
+      "alert_rule_test": [
+        {
+          "eval_time": "3m",
+          "alertname": "TasksStuckRunning",
+          "exp_alerts": [
+            {
+              "exp_labels": {
+                "severity": "critical"
+              },
+              "exp_annotations": {
+                "summary": "Tasks exceeded the configured RUNNING age threshold",
+                "description": "Inspect worker heartbeats, task leases, and correlated logs before retrying."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "DLQ grows across two exporting services",
+      "interval": "10s",
+      "input_series": [
+        {
+          "series": "dlq_size{job=\"api\",type=\"email\"}",
+          "values": "0+1x70"
+        },
+        {
+          "series": "dlq_size{job=\"dlq\",type=\"email\"}",
+          "values": "0+1x70"
+        }
+      ],
+      "alert_rule_test": [
+        {
+          "eval_time": "5m",
+          "alertname": "DLQGrowing",
+          "exp_alerts": [
+            {
+              "exp_labels": {
+                "severity": "warning"
+              },
+              "exp_annotations": {
+                "summary": "Open DLQ grew by more than five incidents in ten minutes",
+                "description": "Inspect the DLQ and agent actions in the Task Scheduler dashboard."
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

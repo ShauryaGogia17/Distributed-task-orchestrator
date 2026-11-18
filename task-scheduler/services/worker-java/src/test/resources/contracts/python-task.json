@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "ai_modified": true,
+  "generation": 2,
+  "task_id": "77342418-78a5-4bdf-8591-ab0467e5a9f4",
+  "type": "java.data_transform",
+  "payload": {
+    "operation": "uppercase",
+    "values": [
+      "hello",
+      "résumé",
+      "東京"
+    ],
+    "metadata": {
+      "large_integer": 9007199254740993,
+      "boolean": true,
+      "nothing": null,
+      "decimal": 1.25
+    }
+  },
+  "priority": 8,
+  "attempt_no": 3,
+  "max_retries": 5,
+  "scheduled_at": "2026-11-10T12:30:00.123456Z",
+  "created_at": "2026-11-10T12:00:00Z"
+}
